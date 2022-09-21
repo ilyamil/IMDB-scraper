@@ -1,19 +1,14 @@
 import os
-import sys
 from pathlib import Path
-
-# path to package source code
-src_path = os.path.join(
-    Path(__file__).resolve().parents[2].as_posix(),
-    'src'
-)
-sys.path.append(src_path)
-
-from imdb_scrapper.utils import get_path # noqa
+from imdb_scrapper.utils import get_path, send_request
 
 
 def test_get_path():
     file_structure = 'folder/in_folder/some_file.txt'
+    src_path = os.path.join(
+        Path(__file__).resolve().parents[2].as_posix(),
+        'src'
+    )
     true_path = os.path.join(
         os.path.abspath(os.path.join(src_path, '..')),
         'folder',
@@ -21,3 +16,8 @@ def test_get_path():
         'some_file.txt'
     )
     assert get_path(file_structure) == true_path
+
+
+def test_send_request():
+    url = 'https://google.com'
+    assert send_request(url).status_code == 200
