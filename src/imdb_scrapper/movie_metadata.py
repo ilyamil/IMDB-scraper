@@ -1,6 +1,6 @@
-from bdb import GENERATOR_AND_COROUTINE_FLAGS
 import re
 import time
+import pandas as pd
 from typing import Optional, Dict, Any, List, Set, Union
 from tqdm.auto import tqdm
 from bs4 import BeautifulSoup
@@ -40,11 +40,11 @@ GENRE_URL = (
 BASE_URL = 'https://www.imdb.com{}'
 STEP = 50
 TOP_N_ACTORS = 10
-BATCH_SIZE = 50
+BATCH_SIZE = 100
 SLEEP_TIME = 1
 
 
-def collect_metadata(config: Dict[str, Any]):
+def collect_metadata(config: Dict[str, Any], credentials: Dict[str, Any]):
     if config['genres'] == 'all':
         use_genres = GENRES
     else:
@@ -58,13 +58,61 @@ def collect_metadata(config: Dict[str, Any]):
     log_config = {k: v for k, v in config.items() if 'log_' in k}
     logger = create_logger(**log_config)
 
-    ids = collect_ids(use_genres, config['pct_titles'])
-    metadata = {id_: {'technical_field': None} for id_ in ids}
-    
+    storage_options = {
+        'key': credentials['aws']['access_key'],
+        'secret': credentials['aws']['secret_access_key']
+    }
+    s3_uri = f's3://{credentials["aws"]["bucket"]}/{config["metadata_file"]}'
 
-    for genre, cnt in use_genres.items():
+    try:
+        logger.info('Trying to read metadata file from s3')
 
-        pass
+        metadata = pd.read_json(s3_uri, storage_options=storage_options)
+        print('Metadata file was found.')
+
+        logger.info('Metadata file was loaded from s3')
+    except FileNotFoundError:
+        print('Metadata file wasn`t found.\nCollecting movie identifiers...')
+
+        logger.info('Collecting movie identifiers')
+
+        ids = collect_ids(use_genres, config['pct_titles'])
+        metadata_ = {
+            id_: {
+                'metadata_collected_flg': False,
+                'reviews_collected_flg': False
+            }
+            for id_ in ids
+        }
+        metadata = pd.DataFrame.from_dict(data=metadata_, orient='index')
+        metadata.to_json(
+            s3_uri,
+            orient='index',
+            storage_options=storage_options
+        )
+
+        logger.info('Identifiers were collected')
+
+    collected = []
+    print('Collecting movie metadata...')
+    for id_ in metadata.index:
+        if metadata.at[id_, 'metadata_collected_flg']:
+            continue
+
+        
+
+        collected.append(id_)
+        if len(collected) == BATCH_SIZE:
+            for c in collected:
+                metadata.at[c, 'metadata_collected_flg'] = True
+            metadata.to_json(
+                s3_uri,
+                orient='index',
+                storage_options=storage_options
+            )
+
+    return
+
 
 
 def collect_ids(genres: List[str], pct_titles: float) -> Set[str]:

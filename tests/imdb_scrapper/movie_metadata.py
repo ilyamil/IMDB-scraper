@@ -1,4 +1,3 @@
-import os
 import pytest
 from bs4 import BeautifulSoup
 from imdb_scrapper.utils import send_request

@@ -1,16 +1,15 @@
 metadata:
-  mode: 'cloud'
-  target_file: 'metadata/metadata.json'
+  metadata_file: 'metadata/metadata.json'
   genres: 'all'
   pct_titles: 10
+  overwrite: False
   log_file: 'logs/details.log'
   log_level: 'INFO'
   log_msg_format: '%(asctime)s %(levelname)s %(message)s'
   log_dt_format: '%Y-%m-%d %H:%M:%S'
 
 reviews:
-  mode: 'cloud'
-  metadata_source_file: 'metadata/metadata.json'
+  metadata_file: 'metadata/metadata.json'
   chunk_size: 200
   pct_reviews: 100
   log_file: 'logs/reviews.log'
@@ -19,7 +18,6 @@ reviews:
   log_dt_format: '%Y-%m-%d %H:%M:%S'  
 
 etl:
-  mode: 'cloud'
   source: 'metadata/metadata.json'
   target: 'metadata/metadata_preprocessed.json'
   reviews_num_partitions: 10
