@@ -2,9 +2,7 @@ metadata:
   mode: 'cloud'
   target_file: 'metadata/metadata.json'
   genres: 'all'
-  n_titles: null
   pct_titles: 10
-  sleep_time: 0.2
   log_file: 'logs/details.log'
   log_level: 'INFO'
   log_msg_format: '%(asctime)s %(levelname)s %(message)s'
@@ -13,10 +11,8 @@ metadata:
 reviews:
   mode: 'cloud'
   metadata_source_file: 'metadata/metadata.json'
-  n_reviews: null
   chunk_size: 200
   pct_reviews: 100
-  sleep_time: 0.1
   log_file: 'logs/reviews.log'
   log_level: 'INFO'
   log_msg_format: '%(asctime)s %(levelname)s %(message)s'

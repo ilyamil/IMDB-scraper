@@ -1,65 +1,114 @@
+from bdb import GENERATOR_AND_COROUTINE_FLAGS
 import re
-from typing import Optional, Dict, Any, List, Union
+import time
+from typing import Optional, Dict, Any, List, Set, Union
 from tqdm.auto import tqdm
 from bs4 import BeautifulSoup
 from imdb_scrapper.utils import send_request, create_logger
 
 
 BAR_FORMAT = '{desc:<20} {percentage:3.0f}%|{bar:20}{r_bar}'
+#BAR_FORMAT = '{percentage:3.0f}%|{bar:20}{r_bar}'
 # total number of movies collected manually as of December 2021
-MOVIE_COUNT_BY_GENRE = {
-    'action': 49210,
-    'adventure': 24075,
-    'animation': 7479,
-    'biography': 7519,
-    'comedy': 98571,
-    'crime': 33263,
-    'drama': 209137,
-    'family': 15800,
-    'fantasy': 15831,
-    'film-noir': 818,
-    'history': 8345,
-    'horror': 33292,
-    'music': 6883,
-    'musical': 10226,
-    'mystery': 17137,
-    'romance': 48572,
-    'sci-fi': 15326,
-    'sport': 4824,
-    'thriller': 49018,
-    'war': 9499,
-    'western': 8880
-}
-URL_TEMPLATE = (
+GENRES = [
+    'action',
+    'adventure',
+    'animation',
+    'biography',
+    'comedy',
+    'crime',
+    'drama',
+    'family',
+    'fantasy',
+    'film-noir',
+    'history',
+    'horror',
+    'music',
+    'musical',
+    'mystery',
+    'romance',
+    'sci-fi',
+    'sport',
+    'thriller',
+    'war',
+    'western'
+]
+GENRE_URL = (
     'https://www.imdb.com/search/title/?title_type=feature&genres={}'
     '&sort=num_votes,desc&start={}&explore=genres&ref_=adv_nxt'
 )
-STEP = 50
-BAR_FORMAT = '{percentage:3.0f}%|{bar:20}{r_bar}'
 BASE_URL = 'https://www.imdb.com{}'
+STEP = 50
 TOP_N_ACTORS = 10
 BATCH_SIZE = 50
+SLEEP_TIME = 1
 
 
-def collect_ids_from_single_page(url: str) -> List[str]:
+def collect_metadata(config: Dict[str, Any]):
+    if config['genres'] == 'all':
+        use_genres = GENRES
+    else:
+        use_genres = {g for g in GENRES if g in config['genres']}
+
+    if (config['pct_titles'] > 100) | (config['pct_titles'] < 0):
+        raise ValueError(
+            'Configuration parameter pct_reviews must be in range [0, 100]'
+        )
+
+    log_config = {k: v for k, v in config.items() if 'log_' in k}
+    logger = create_logger(**log_config)
+
+    ids = collect_ids(use_genres, config['pct_titles'])
+    metadata = {id_: {'technical_field': None} for id_ in ids}
+    
+
+    for genre, cnt in use_genres.items():
+
+        pass
+
+
+def collect_ids(genres: List[str], pct_titles: float) -> Set[str]:
+    ids = {}
+    for genre in tqdm(genres, bar_format=BAR_FORMAT):
+        total_titles_count = get_total_count(GENRE_URL.format(genre, 1))
+        max_titles = int(total_titles_count * pct_titles / 100)
+        prev_partition = 1
+        for partition in range(1, max_titles + 1, STEP):
+            ids += collect_ids_from_single_page(
+                GENRE_URL.format(prev_partition, partition)
+            )
+            prev_partition = partition
+    return ids
+
+
+def collect_ids_from_single_page(url: str) -> Set[str]:
     page = send_request(url)
     soup = BeautifulSoup(page.content, 'html.parser')
     containers = soup.find_all('div', {'class': 'lister-item-content'})
-    return [t.a['href'] for t in containers]
+    return {t.a['href'] for t in containers}
 
 
-def collect_ids():
-    # ids = {}
-    # for genre, cnt in MOVIE_COUNT_BY_GENRE.items():
-    pass
+def get_total_count(url: str) -> int:
+    page = send_request(url)
+    soup = BeautifulSoup(page.content, 'html.parser')
+    total_count_str = (
+        soup
+        .find('div', {'class': 'desc'})
+        .find('span')
+        .text
+        .split(' ')
+        [2]
+    )
+    return int(total_count_str.replace(',', ''))
 
 
 def collect_single_movie_metadata(url: str) -> Dict[str, Any]:
     page = send_request(url)
-    soup = BeautifulSoup(page.text, 'lxml')
+    soup = BeautifulSoup(page.content, 'html.parser')
     return {
         'original_title': collect_original_title(soup),
         'genres': collect_genres(soup),
+        'director': collect_director(soup),
         'poster_url': collect_poster_url(soup),
         'review_summary': collect_review_summary(soup),
         'agg_rating': collect_aggregate_rating(soup),
@@ -68,6 +117,20 @@ def collect_single_movie_metadata(url: str) -> Dict[str, Any]:
         'details': collect_details_summary(soup),
         'boxoffice': collect_boxoffice(soup)
     }
+
+
+def collect_director(soup: BeautifulSoup) -> Optional[str]:
+    filters = {
+        'class':
+        (
+            'ipc-metadata-list ipc-metadata-list--dividers-all '
+            'title-pc-list ipc-metadata-list--baseAlt'
+        )
+    }
+    try:
+        return soup.find_all('ul', filters)[0].find('a').text
+    except Exception:
+        return None
 
 
 def collect_original_title(soup: BeautifulSoup) -> Optional[str]:

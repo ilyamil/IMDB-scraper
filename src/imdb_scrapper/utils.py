@@ -1,7 +1,8 @@
 import os
 import logging
+import yaml
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional, Dict, Any
 from requests import (
     ConnectionError,
     Timeout,
@@ -57,6 +58,13 @@ def send_request(url: str, session: Session = None, **params) -> Response:
     if session:
         return session.get(url, headers=headers, **params)
     return get(url, headers=headers, **params)
+
+
+def read_yaml(path: str) -> Optional[Dict[str, Any]]:
+    y = None
+    with open(path, "r") as stream:
+        y = yaml.safe_load(stream)
+    return y
 
 
 def check_mode_requirements(mode: Literal['local', 'cloud']):
