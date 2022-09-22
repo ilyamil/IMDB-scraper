@@ -37,16 +37,16 @@ def get_path(dirname_or_filename: str, filename: str = None) -> str:
 
 
 def create_logger(
-    filename: str,
-    msg_format: str,
-    dt_format: str,
-    level: str
+    log_file: str,
+    log_msg_format: str,
+    log_dt_format: str,
+    log_level: str
 ) -> logging.Logger:
     logger_params = {
-        'filename': get_path(filename),
-        'format': msg_format,
-        'datefmt': dt_format,
-        'level': level
+        'filename': get_path(log_file),
+        'format': log_msg_format,
+        'datefmt': log_dt_format,
+        'level': log_level
     }
     logging.basicConfig(**logger_params)
     return logging.getLogger('')

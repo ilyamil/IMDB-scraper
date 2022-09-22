@@ -1,5 +1,5 @@
 metadata:
-  metadata_file: 'metadata/metadata.json'
+  metadata_file: 'metadata/metadata_raw.json'
   genres: 'all'
   pct_titles: 10
   overwrite: False

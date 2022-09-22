@@ -8,7 +8,6 @@ from imdb_scrapper.utils import send_request, create_logger
 
 
 BAR_FORMAT = '{desc:<20} {percentage:3.0f}%|{bar:20}{r_bar}'
-#BAR_FORMAT = '{percentage:3.0f}%|{bar:20}{r_bar}'
 # total number of movies collected manually as of December 2021
 GENRES = [
     'action',
@@ -41,7 +40,7 @@ BASE_URL = 'https://www.imdb.com{}'
 STEP = 50
 TOP_N_ACTORS = 10
 BATCH_SIZE = 100
-SLEEP_TIME = 1
+SLEEP_TIME = 0.2
 
 
 def collect_metadata(config: Dict[str, Any], credentials: Dict[str, Any]):
@@ -65,6 +64,9 @@ def collect_metadata(config: Dict[str, Any], credentials: Dict[str, Any]):
     s3_uri = f's3://{credentials["aws"]["bucket"]}/{config["metadata_file"]}'
 
     try:
+        if config['overwrite']:
+            raise
+
         logger.info('Trying to read metadata file from s3')
 
         metadata = pd.read_json(s3_uri, storage_options=storage_options)
@@ -76,7 +78,7 @@ def collect_metadata(config: Dict[str, Any], credentials: Dict[str, Any]):
 
         logger.info('Collecting movie identifiers')
 
-        ids = collect_ids(use_genres, config['pct_titles'])
+        ids = collect_ids(use_genres, config['pct_titles'], logger)
         metadata_ = {
             id_: {
                 'metadata_collected_flg': False,
@@ -95,37 +97,64 @@ def collect_metadata(config: Dict[str, Any], credentials: Dict[str, Any]):
 
     collected = []
     print('Collecting movie metadata...')
-    for id_ in metadata.index:
+    for i, id_ in enumerate(tqdm(metadata.index)):
         if metadata.at[id_, 'metadata_collected_flg']:
             continue
 
-        
+        logger.info(f'Collecting metadata for movie {id_}')
+        try:
+            id_metadata = collect_single_movie_metadata(BASE_URL.format(id_))
+            logger.info(f'Successfully collected metadata for movie {id_}')
+        except Exception as e:
+            logger.info(f'Catched exception "{str(e)}"')
+            continue
+
+        for k, v in id_metadata.items():
+            if k not in metadata.columns:
+                metadata[k] = None
+            metadata.at[id_, k] = v
 
         collected.append(id_)
-        if len(collected) == BATCH_SIZE:
+        if (len(collected) == BATCH_SIZE) | (i == len(metadata.index) - 1):
+            logger.info('Writing updated metadata')
+
             for c in collected:
                 metadata.at[c, 'metadata_collected_flg'] = True
+
             metadata.to_json(
                 s3_uri,
                 orient='index',
                 storage_options=storage_options
             )
+            collected = []
 
-    return
+            logger.info('Updated metadata was successfully written')
 
 
-
-def collect_ids(genres: List[str], pct_titles: float) -> Set[str]:
-    ids = {}
-    for genre in tqdm(genres, bar_format=BAR_FORMAT):
+def collect_ids(genres: List[str], pct_titles: float, logger) -> Set[str]:
+    ids = set()
+    for genre in genres:
         total_titles_count = get_total_count(GENRE_URL.format(genre, 1))
         max_titles = int(total_titles_count * pct_titles / 100)
         prev_partition = 1
-        for partition in range(1, max_titles + 1, STEP):
-            ids += collect_ids_from_single_page(
+        tqdm_params = {
+            'iterable': range(1, max_titles + 1, STEP),
+            'desc': genre,
+            'unit_scale': STEP,
+            'bar_format': BAR_FORMAT,
+            'total': max_titles
+        }
+        for partition in tqdm(**tqdm_params):
+            ids |= collect_ids_from_single_page(
                 GENRE_URL.format(prev_partition, partition)
             )
             prev_partition = partition
+
+            logger.info(
+                f'Collected ids in genre {genre}: '
+                f'{prev_partition} - {partition}'
+            )
+            time.sleep(SLEEP_TIME)
     return ids
 
 
