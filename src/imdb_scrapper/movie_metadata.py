@@ -137,14 +137,8 @@ def collect_ids(genres: List[str], pct_titles: float, logger) -> Set[str]:
         total_titles_count = get_total_count(GENRE_URL.format(genre, 1))
         max_titles = int(total_titles_count * pct_titles / 100)
         prev_partition = 1
-        tqdm_params = {
-            'iterable': range(1, max_titles + 1, STEP),
-            'desc': genre,
-            'unit_scale': STEP,
-            'bar_format': BAR_FORMAT,
-            'total': max_titles
-        }
-        for partition in tqdm(**tqdm_params):
+        partitions = range(STEP, max_titles + 1, STEP)
+        for partition in tqdm(partitions, unit_scale=STEP):
             ids |= collect_ids_from_single_page(
                 GENRE_URL.format(prev_partition, partition)
             )

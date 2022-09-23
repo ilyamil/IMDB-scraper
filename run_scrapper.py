@@ -8,46 +8,46 @@ CREDENTIALS_FILE = 'credentials.yaml'
 ENTITIES = ['metadata', 'reviews']
 
 
-def parse_arguments():
-    parser = ArgumentParser(
-        description='Python script for web scraping of IMDB'
-    )
-    parser.add_argument(
-        '-e', '--entity', type=str,
-        help=f'Entity to collect: {", ".join(ENTITIES)}'
-    )
-    return parser.parse_args()
+# def parse_arguments():
+#     parser = ArgumentParser(
+#         description='Python script for web scraping of IMDB'
+#     )
+#     parser.add_argument(
+#         '-e', '--entity', type=str,
+#         help=f'Entity to collect: {", ".join(ENTITIES)}'
+#     )
+#     return parser.parse_args()
 
 
-def run(entity: str):
-    config = read_yaml(CONFIG_FILE)
-    credentials = read_yaml(CREDENTIALS_FILE)
-    if entity == 'metadata':
-        collect_metadata(config['metadata'], credentials)
-    elif entity == 'reviews':
-        raise NotImplementedError
-    else:
-        raise ValueError('Unsupported entity')
+# def run(entity: str):
+#     config = read_yaml(CONFIG_FILE)
+#     credentials = read_yaml(CREDENTIALS_FILE)
+#     if entity == 'metadata':
+#         collect_metadata(config['metadata'], credentials)
+#     elif entity == 'reviews':
+#         raise NotImplementedError
+#     else:
+#         raise ValueError('Unsupported entity')
 
 
-if __name__ == '__main__':
-    arguments = parse_arguments()
-    run(arguments.entity)
-
-# storage_options = {
-#     'key': aws_credentials['aws']['access_key'],
-#     'secret': aws_credentials['aws']['secret_access_key']
-# }
-# uri = f's3://{aws_credentials["aws"]["bucket"]}/metadata/metadata.json'
+# if __name__ == '__main__':
+#     arguments = parse_arguments()
+#     run(arguments.entity)
+aws_credentials = read_yaml(CREDENTIALS_FILE)
+storage_options = {
+    'key': aws_credentials['aws']['access_key'],
+    'secret': aws_credentials['aws']['secret_access_key']
+}
+uri = f's3://{aws_credentials["aws"]["bucket"]}/metadata/metadata_raw.json'
 # a = pd.DataFrame({'a': [1, 2, 3], 'b': [5, 6, 7]})
 # a[['c', 'd', 'e']] = 0
 # print(a)
-
-# try:
-#     metadata = pd.read_json(uri, storage_options=storage_options, orient='index')
-# except FileNotFoundError:
-#     print('catch!')
-# print(metadata)
+import pandas as pd
+try:
+    metadata = pd.read_json(uri, storage_options=storage_options, orient='index')
+except FileNotFoundError:
+    print('catch!')
+print(metadata.shape)
 
 # d = {
 #     'first_movie': {
