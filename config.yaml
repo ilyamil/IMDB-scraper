@@ -2,7 +2,7 @@ metadata:
   metadata_file: 'metadata/metadata_raw.json'
   genres: 'all'
   pct_titles: 10
-  overwrite: False
+  overwrite: True
   log_file: 'logs/details.log'
   log_level: 'INFO'
   log_msg_format: '%(asctime)s %(levelname)s %(message)s'

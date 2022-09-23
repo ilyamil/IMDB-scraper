@@ -65,15 +65,19 @@ def collect_metadata(config: Dict[str, Any], credentials: Dict[str, Any]):
 
     try:
         if config['overwrite']:
-            raise
+            raise ValueError
 
         logger.info('Trying to read metadata file from s3')
 
-        metadata = pd.read_json(s3_uri, storage_options=storage_options)
+        metadata = pd.read_json(
+            s3_uri,
+            storage_options=storage_options,
+            orient='index'
+        )
         print('Metadata file was found.')
 
         logger.info('Metadata file was loaded from s3')
-    except FileNotFoundError:
+    except Exception:
         print('Metadata file wasn`t found.\nCollecting movie identifiers...')
 
         logger.info('Collecting movie identifiers')
@@ -136,19 +140,18 @@ def collect_ids(genres: List[str], pct_titles: float, logger) -> Set[str]:
     for genre in genres:
         total_titles_count = get_total_count(GENRE_URL.format(genre, 1))
         max_titles = int(total_titles_count * pct_titles / 100)
-        prev_partition = 1
-        partitions = range(STEP, max_titles + 1, STEP)
-        for partition in tqdm(partitions, unit_scale=STEP):
-            ids |= collect_ids_from_single_page(
-                GENRE_URL.format(prev_partition, partition)
+        partitions = range(1, max_titles + 1, STEP)
+        for partition in tqdm(partitions, unit_scale=STEP, desc=genre):
+            new_ids = collect_ids_from_single_page(
+                GENRE_URL.format(genre, partition)
             )
-            prev_partition = partition
-
+            ids.update(new_ids)
             logger.info(
                 f'Collected ids in genre {genre}: '
-                f'{prev_partition} - {partition}'
+                f'{partition} - {partition + STEP - 1}'
             )
             time.sleep(SLEEP_TIME)
+        print(len(ids))
     return ids
 
 
