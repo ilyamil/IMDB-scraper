@@ -134,6 +134,8 @@ def collect_metadata(config: Dict[str, Any], credentials: Dict[str, Any]):
 
             logger.info('Updated metadata was successfully written')
 
+        time.sleep(SLEEP_TIME)
+
 
 def collect_ids(genres: List[str], pct_titles: float, logger) -> Set[str]:
     ids = set()
@@ -151,7 +153,6 @@ def collect_ids(genres: List[str], pct_titles: float, logger) -> Set[str]:
                 f'{partition} - {partition + STEP - 1}'
             )
             time.sleep(SLEEP_TIME)
-        print(len(ids))
     return ids
 
 
