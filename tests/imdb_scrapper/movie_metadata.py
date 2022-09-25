@@ -1,7 +1,7 @@
 import pytest
 from bs4 import BeautifulSoup
-from imdb_scrapper.utils import send_request
-from imdb_scrapper.movie_metadata import (
+from imdb_scraper.utils import send_request
+from imdb_scraper.movie_metadata import (
     collect_original_title,
     collect_director,
     collect_review_summary,

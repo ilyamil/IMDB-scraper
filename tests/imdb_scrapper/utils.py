@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from imdb_scrapper.utils import get_path, send_request
+from imdb_scraper.utils import get_path, send_request
 
 
 def test_get_path():
