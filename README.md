@@ -1,5 +1,5 @@
 # IMDB Scrapper
-Python-based scrapper of Internet Movie Data Base (IMDB) web-site
+Python-based scraper of Internet Movie Database (IMDB) web-site
 
 # Installation
 
