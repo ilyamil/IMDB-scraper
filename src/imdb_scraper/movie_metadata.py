@@ -1,6 +1,7 @@
 import re
 import time
 import pandas as pd
+import s3fs # noqa
 from typing import Optional, Dict, Any, List, Set, Union
 from tqdm.auto import tqdm
 from bs4 import BeautifulSoup
