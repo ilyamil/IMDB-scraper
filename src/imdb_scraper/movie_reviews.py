@@ -35,7 +35,7 @@ LINK_URL_TEMPLATE = (
     'https://www.imdb.com{}reviews/_ajax/?sort=helpfulnessScore'
     '&dir=desc&ratingFilter=0'
 )
-PARTITION_NAME_TEMPLATE = 'movie_reviews/movie_reviews_partition_{}.csv'
+PARTITION_NAME_TEMPLATE = 's3://{}/reviews/movie_reviews_partition_{}.csv'
 SLEEP_TIME = 0.1
 BATCH_SIZE = 100
 
@@ -117,7 +117,9 @@ def collect_reviews(
                 )
 
                 partition_num = ceil(i / limit)
-                partition_uri = PARTITION_NAME_TEMPLATE.format(partition_num)
+                partition_uri = PARTITION_NAME_TEMPLATE.format(
+                    credentials["aws"]["bucket"], partition_num
+                )
                 pd.DataFrame.from_records(reviews).to_csv(
                     partition_uri, storage_options=storage_options
                 )
