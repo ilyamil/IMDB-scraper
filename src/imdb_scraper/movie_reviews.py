@@ -1,3 +1,4 @@
+from math import ceil
 import os
 import time
 import warnings
@@ -37,11 +38,97 @@ LINK_URL_TEMPLATE = (
     'https://www.imdb.com{}reviews/_ajax/?sort=helpfulnessScore'
     '&dir=desc&ratingFilter=0'
 )
+PARTITION_NAME_TEMPLATE = 'movie_reviews/movie_reviews_partition_{}.csv'
 SLEEP_TIME = 0.1
+BATCH_SIZE = 100
 
 
-def collect_reviews(config: Dict[str, Any], credentials: Dict[str, Any]):
-    pass
+def collect_reviews(
+    config: Dict[str, Any],
+    credentials: Dict[str, Any],
+    limit: int = BATCH_SIZE,
+    return_results: bool = False
+):
+    """
+    Main function to collect reviews from IMDB. All related parameters must
+    be specified in configs and passed as function argument.
+
+    Args:
+        * config (Dict[str, Any]): scraper configuration with the following
+        list of required fields:
+            * metadata_file (str): name of a file we want to populate with
+            metadata.
+            * genres (str or List[str]): genres that movies must be assigned
+            to. It is possible to either explicitly set this field with a list
+            of genres or use a keyword 'all' if you want to collect movies
+            in all genres.
+            * pct_titles (float): percent of titles in each genre scraper will
+            try to collect.
+            * overwrite (bool): whether to overwrite metadata after each run.
+            I recommend to set this parameter with False.
+            * log_file (str): path to log file with logs related to metadata.
+            * log_level (str): no logs below this level will be written to log
+            file.
+            * log_msg_format (str): log message format
+            * log_dt_format (str): datetime format
+        * credentials (Dict[str, Any]): all related credentials to read from
+        and write to AWS s3. Required fields:
+            * access_key (str)
+            * secret_access_key (str)
+            * bucket (str)
+        * limit (int, optional): technical argument to limit number of movies
+        to collect reviews from. Defaults to BATCH_SIZE.
+        * return_results (bool, optional): technical argument to define
+        whether the functions returns results or save them. Defaults to False.
+    """
+    log_config = {k: v for k, v in config.items() if 'log_' in k}
+    logger = create_logger(**log_config)
+
+    storage_options = {
+        'key': credentials['aws']['access_key'],
+        'secret': credentials['aws']['secret_access_key']
+    }
+    s3_uri = f's3://{credentials["aws"]["bucket"]}/{config["metadata_file"]}'
+    metadata = pd.read_json(
+        s3_uri,
+        storage_options=storage_options,
+        orient='index'
+    )
+
+    reviews = []
+    for i, movie_id in enumerate(tqdm(metadata.index), 1):
+        if metadata.at[movie_id, 'reviews_collected_flg']:
+            continue
+
+        logger.info(f'Started collecting reviews for movie {movie_id}')
+        reviews.append(
+            collect_single_movie_reviews(
+                movie_id, config['pct_reviews'], logger
+            )
+        )
+        logger.info(f'Collected reviews for movie {movie_id}')
+
+        if (len(reviews) >= limit) | (i == len(metadata.index)):
+            if return_results:
+                return reviews
+            else:
+                for r in reviews:
+                    metadata.at[r['movie_id'], 'reviews_collected_flg'] = True
+                metadata.to_json(
+                    s3_uri, storage_options=storage_options, orient='index'
+                )
+
+                partition_num = ceil(i / limit)
+                partition_uri = PARTITION_NAME_TEMPLATE.format(partition_num)
+                pd.DataFrame.from_records(reviews).to_csv(
+                    partition_uri, storage_options=storage_options
+                )
+                logger.info(
+                    f'{len(reviews)} reviews have been written to '
+                    f'partition #{partition_num}'
+                )
+
+                reviews = []
 
 
 def collect_single_movie_reviews(
@@ -79,6 +166,7 @@ def collect_single_movie_reviews(
             soup = BeautifulSoup(res.content, 'html.parser')
             for tag in soup.select('.review-container'):
                 review = collect_single_review(tag)
+                review['movie_id'] = movie_id
                 reviews_batch.append(review)
 
             title_reviews.extend(reviews_batch)

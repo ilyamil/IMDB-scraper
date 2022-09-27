@@ -10,7 +10,6 @@ metadata:
 
 reviews:
   metadata_file: 'metadata/metadata.json'
-  chunk_size: 200
   pct_reviews: 100
   log_file: 'logs/reviews.log'
   log_level: 'INFO'
