@@ -110,8 +110,9 @@ def collect_reviews(
                 return reviews
             else:
                 for r in reviews:
-                    id_ = r[0]['movie_id']
-                    metadata.at[id_, 'reviews_collected_flg'] = True
+                    if len(r) > 0:
+                        id_ = r[0]['movie_id']
+                        metadata.at[id_, 'reviews_collected_flg'] = True
                 metadata.to_json(
                     s3_uri, storage_options=storage_options, orient='index'
                 )
