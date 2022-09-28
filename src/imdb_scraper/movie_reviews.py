@@ -98,21 +98,17 @@ def collect_reviews(
             continue
 
         logger.info(f'Started collecting reviews for movie {movie_id}')
-        reviews.append(
-            collect_single_movie_reviews(
+        single_movie_reviews = collect_single_movie_reviews(
                 movie_id, config['pct_reviews'], logger
-            )
         )
+        reviews.append(single_movie_reviews)
+        metadata.at[movie_id, 'reviews_collected_flg'] = True
         logger.info(f'Collected reviews for movie {movie_id}')
 
         if (len(reviews) >= limit) | (i == len(metadata.index)):
             if return_results:
                 return reviews
             else:
-                for r in reviews:
-                    if len(r) > 0:
-                        id_ = r[0]['movie_id']
-                        metadata.at[id_, 'reviews_collected_flg'] = True
                 metadata.to_json(
                     s3_uri, storage_options=storage_options, orient='index'
                 )
