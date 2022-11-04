@@ -99,6 +99,7 @@ def collect_reviews(
         )
 
     reviews = []
+    collected_cnt = 0
     for i, movie_id in enumerate(tqdm(metadata.index), 1):
         if metadata.at[movie_id, 'reviews_collected_flg']:
             continue
@@ -110,10 +111,11 @@ def collect_reviews(
         )
         reviews.extend(single_movie_reviews)
         metadata.at[movie_id, 'reviews_collected_flg'] = True
+        collected_cnt += 1
 
         logger.info(f'Collected reviews for movie {movie_id}')
 
-        if (len(reviews) >= limit) | (i == len(metadata.index)):
+        if (collected_cnt >= limit) | (i == len(metadata.index)):
             if return_results:
                 return reviews
             else:
@@ -138,6 +140,7 @@ def collect_reviews(
                 )
 
                 reviews = []
+                collected_cnt = 0
 
 
 def collect_single_movie_reviews(
