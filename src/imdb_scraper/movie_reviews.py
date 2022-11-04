@@ -37,7 +37,7 @@ LINK_URL_TEMPLATE = (
 )
 PARTITION_NAME_TEMPLATE = 's3://{}/reviews/movie_reviews_partition_{}.csv'
 SLEEP_TIME = 0.1
-BATCH_SIZE = 2
+BATCH_SIZE = 100
 
 
 def collect_reviews(
