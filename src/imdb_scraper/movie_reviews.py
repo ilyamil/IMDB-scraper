@@ -37,7 +37,7 @@ LINK_URL_TEMPLATE = (
 )
 PARTITION_NAME_TEMPLATE = 's3://{}/reviews/movie_reviews_partition_{}.csv'
 SLEEP_TIME = 0.1
-BATCH_SIZE = 100
+BATCH_SIZE = 2
 
 
 def collect_reviews(
@@ -91,6 +91,7 @@ def collect_reviews(
         storage_options=storage_options,
         orient='index'
     )
+    metadata['reviews_collected_flg'] = False
 
     reviews = []
     for i, movie_id in enumerate(tqdm(metadata.index), 1):
@@ -101,7 +102,7 @@ def collect_reviews(
         single_movie_reviews = collect_single_movie_reviews(
                 movie_id, config['pct_reviews'], logger
         )
-        reviews.append(single_movie_reviews)
+        reviews.extend(single_movie_reviews)
         metadata.at[movie_id, 'reviews_collected_flg'] = True
         logger.info(f'Collected reviews for movie {movie_id}')
 
@@ -117,9 +118,12 @@ def collect_reviews(
                 partition_uri = PARTITION_NAME_TEMPLATE.format(
                     credentials["aws"]["bucket"], partition_num
                 )
-                pd.DataFrame.from_records(reviews).to_csv(
-                    partition_uri, storage_options=storage_options
+                partition = pd.DataFrame.from_records(reviews)
+                partition.to_csv(
+                    partition_uri,
+                    storage_options=storage_options
                 )
+
                 logger.info(
                     f'{len(reviews)} reviews have been written to '
                     f'partition #{partition_num}'
