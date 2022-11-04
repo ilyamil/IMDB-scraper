@@ -9,7 +9,7 @@ metadata:
   log_dt_format: '%Y-%m-%d %H:%M:%S'
 
 reviews:
-  metadata_file: 'metadata/metadata.json'
+  metadata_file: 'metadata/metadata_raw.json'
   pct_reviews: 100
   overwrite: True
   log_file: 'logs/reviews.log'

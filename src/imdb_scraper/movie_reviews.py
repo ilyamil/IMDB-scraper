@@ -104,11 +104,13 @@ def collect_reviews(
             continue
 
         logger.info(f'Started collecting reviews for movie {movie_id}')
+
         single_movie_reviews = collect_single_movie_reviews(
                 movie_id, config['pct_reviews'], logger
         )
         reviews.extend(single_movie_reviews)
         metadata.at[movie_id, 'reviews_collected_flg'] = True
+
         logger.info(f'Collected reviews for movie {movie_id}')
 
         if (len(reviews) >= limit) | (i == len(metadata.index)):
