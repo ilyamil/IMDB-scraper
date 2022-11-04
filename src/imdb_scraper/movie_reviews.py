@@ -91,7 +91,12 @@ def collect_reviews(
         storage_options=storage_options,
         orient='index'
     )
-    metadata['reviews_collected_flg'] = False
+
+    if config['overwrite']:
+        metadata['reviews_collected_flg'] = False
+        metadata.to_json(
+            s3_uri, storage_options=storage_options, orient='index'
+        )
 
     reviews = []
     for i, movie_id in enumerate(tqdm(metadata.index), 1):
