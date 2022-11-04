@@ -126,7 +126,8 @@ def collect_reviews(
                 partition = pd.DataFrame.from_records(reviews)
                 partition.to_csv(
                     partition_uri,
-                    storage_options=storage_options
+                    storage_options=storage_options,
+                    index=False
                 )
 
                 logger.info(
