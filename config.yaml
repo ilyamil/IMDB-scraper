@@ -1,7 +1,7 @@
 metadata:
   metadata_file: 'metadata/metadata_raw.json'
   genres: 'all'
-  pct_titles: 10
+  pct_titles: 5
   overwrite: True
   log_file: 'logs/details.log'
   log_level: 'INFO'

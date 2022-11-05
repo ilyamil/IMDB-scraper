@@ -94,9 +94,6 @@ def collect_reviews(
 
     if config['overwrite']:
         metadata['reviews_collected_flg'] = False
-        metadata.to_json(
-            s3_uri, storage_options=storage_options, orient='index'
-        )
 
     reviews = []
     collected_cnt = 0
