@@ -17,8 +17,7 @@ reviews:
   log_msg_format: '%(asctime)s %(levelname)s %(message)s'
   log_dt_format: '%Y-%m-%d %H:%M:%S'  
 
-etl:
-  source: 'metadata/metadata.json'
+preprocessing:
+  source: 'metadata/metadata_raw.json'
   target: 'metadata/metadata_preprocessed.json'
   reviews_num_partitions: 10
-  reviews_partition_format: 'parquet'

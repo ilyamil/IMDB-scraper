@@ -3,207 +3,229 @@ Module contains functions to Extract, Transform, Load (ETL)
 raw data collected by imdb parser.
 """
 import os
-from typing import Dict, List, Any
-from pathlib import Path
-from dotenv import load_dotenv
-from tqdm import tqdm
 import pandas as pd
+from typing import Dict, List, Any
+from tqdm.auto import tqdm
 
 
-class ReviewsETL:
-    def __init__(self, config: Dict[str, Any]):
-        self._mode = config['mode']
-        self._metadata_src = config['metadata_source']
-        self._num_partitions = config['reviews_num_partitions']
-        self._partition_format = config['reviews_partition_format']
+def preprocess_metadata(config: Dict[str, Any], credentials: Dict[str, Any]):
+    storage_options = {
+        'key': credentials['aws']['access_key'],
+        'secret': credentials['aws']['secret_access_key']
+    }
+    s3_source_uri = f's3://{credentials["aws"]["bucket"]}/{config["source"]}'
+    s3_target_uri = f's3://{credentials["aws"]["bucket"]}/{config["target"]}'
 
-        if self._mode == 'cloud':
-            load_dotenv()
-            self._storage_options = {
-                'key': os.getenv('AWS_ACCESS_KEY'),
-                'secret': os.getenv('AWS_SECRET_ACCESS_KEY')
-            }
-            if (not self._storage_options['key'])\
-                    or (not self._storage_options['secret']):
-                raise ValueError(
-                    'AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY'
-                    ' must be specified in environment variables'
-                )
+    metadata = pd.read_json(
+        s3_source_uri,
+        storage_options=storage_options,
+        orient='index'
+    )
+    transformed_metadata = (
+        metadata
+        .pipe(split_aggregate_rating)
+        .pipe(split_review_summary)
+        .pipe(split_movie_genres)
+        .pipe(split_movie_details)
+        .pipe(split_boxoffice)
+    )
+    transformed_metadata.columns.name = None
 
-            self._bucket = os.getenv('AWS_S3_BUCKET')
-            if not self._bucket:
-                raise ValueError(
-                    'AWS_S3_BUCKET must be specified in environment variables'
-                )
+    transformed_metadata.to_json(
+        s3_target_uri,
+        orient='index',
+        storage_options=storage_options
+    )
+    return transformed_metadata
 
-            self._metadata_file = os.path.join(
-                's3://', self._bucket, self._metadata_src
+
+def preprocess_reviews(config: Dict[str, Any], credentials: Dict[str, Any]):
+    storage_options = {
+        'key': credentials['aws']['access_key'],
+        'secret': credentials['aws']['secret_access_key']
+    }
+    s3_metadata_uri = f's3://{credentials["aws"]["bucket"]}/{config["source"]}'
+
+    metadata = pd.read_json(
+        s3_metadata_uri,
+        storage_options=storage_options,
+        orient='index'
+    )
+    total_num_movies = metadata.shape[0]
+    num_movies_in_partition = int(
+        total_num_movies / config['reviews_num_partitions']
+    )
+
+    partitions = []
+    collected_cnt = 0
+    partition_num = 1
+    print(f'Collecting partition #{partition_num}...')
+    for n in range(1, 10000, 1):
+        stop_flg = False
+        try:
+            partition_source_uri = (
+                f's3://{credentials["aws"]["bucket"]}'
+                f'/reviews/movie_reviews_partition_{n}'
             )
-        elif self._mode == 'local':
-            self._storage_options = None
-
-            root_dir = Path(__file__).parents[2].as_posix()
-            self._metadata_file = os.path.join(
-                root_dir,
-                'data',
-                self._metadata_src
+            partition = pd.read_csv(
+                partition_source_uri, storage_options=storage_options
             )
-        else:
-            raise ValueError('Supported modes: "local", "cloud"')
+        except FileNotFoundError:
+            stop_flg = True
+            break
 
-        if self._partition_format not in ['parquet', 'csv']:
-            raise ValueError('Unsupported partition format for reviews')
+        partitions.append(partition)
+        collected_cnt += partition['movie_id'].nunique()
 
-    @staticmethod
-    def transform(raw_data: pd.DataFrame) -> pd.DataFrame:
-        transformed_data = (
-            raw_data
-            .pipe(split_helpfulness_col)
-            .pipe(correct_review_author)
-            .pipe(cut_off_review_title_newline)
-            .pipe(convert_to_date)
-            .pipe(change_review_dtypes)
-            .drop(['Unnamed: 0'], axis=1)
-        )
-        return transformed_data
-
-    def run(self):
-        metadata = pd.read_json(
-            self._metadata_file,
-            storage_options=self._storage_options,
-            orient='index'
-        )
-        partition_to_titles = (
-            metadata['original_title']
-            .apply(hash)
-            .mod(self._num_partitions)
-            .reset_index()
-            .groupby('original_title')
-            .agg(set)
-        )
-
-        print('Running ETL application')
-        for partition in range(self._num_partitions):
-            partition_path = os.path.join(
-                's3://',
-                self._bucket,
-                f'reviews/reviews_partition_{partition + 1}.parquet'
+        if collected_cnt > num_movies_in_partition or stop_flg:
+            transformed_partitions = (
+                pd.concat(partitions)
+                .pipe(split_helpfulness_col)
+                .pipe(correct_review_author)
+                .pipe(cut_off_review_title_newline)
+                .pipe(convert_to_date)
+                .pipe(change_review_dtypes)
             )
-            # check if there exist a partition data
-            try:
-                _ = pd.read_parquet(
-                    partition_path,
-                    columns=['rating'],
-                    storage_options=self._storage_options
-                )
-                print(f'Partition #{partition + 1} already exists')
-            except FileNotFoundError:
-                pass
-
-            titles = partition_to_titles.at[partition, 'index']
-            reviews = []
-            for title in tqdm(titles, desc=f'Partition #{partition + 1}'):
-                review_path = os.path.join(
-                    's3://',
-                    self._bucket,
-                    f'reviews/{title[7:-1]}.csv'
-                )
-                try:
-                    raw_reviews = pd.read_csv(
-                        review_path,
-                        storage_options=self._storage_options
-                    )
-                except FileNotFoundError:
-                    continue
-
-                reviews.append(self.transform(raw_reviews))
-
-            reviews_pdf = pd.concat(reviews).reset_index()
-
-            if self._partition_format == 'parquet':
-                reviews_pdf.to_parquet(
-                    partition_path,
-                    storage_options=self._storage_options,
-                    index=False
-                )
-            elif self._partition_format == 'csv':
-                reviews_pdf.to_csv(
-                    partition_path,
-                    storage_options=self._storage_options,
-                    index=False,
-                    compression='gzip'
-                )
-
-
-class MetadataETL:
-    def __init__(self, config: Dict[str, Any]):
-        self._mode = config['mode']
-        self._metadata_src = config['metadata_source']
-        self._metadata_trg = config['metadata_target']
-
-        if self._mode == 'cloud':
-            load_dotenv()
-            self._storage_options = {
-                'key': os.getenv('AWS_ACCESS_KEY'),
-                'secret': os.getenv('AWS_SECRET_ACCESS_KEY')
-            }
-            if (not self._storage_options['key'])\
-                    or (not self._storage_options['secret']):
-                raise ValueError(
-                    'AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY'
-                    ' must be specified in environment variables'
-                )
-
-            self._bucket = os.getenv('AWS_S3_BUCKET')
-            if not self._bucket:
-                raise ValueError(
-                    'AWS_S3_BUCKET must be specified in environment variables'
-                )
-
-            self._metadata_file = os.path.join(
-                's3://', self._bucket, self._metadata_src
+            partition_uri = (
+                f's3://{credentials["aws"]["bucket"]}'
+                f'/reviews/movie_reviews_partition_{partition_num}'
             )
-            self._metadata_processed_file = os.path.join(
-                's3://', self._bucket, self._metadata_trg
+            transformed_partitions.to_csv(
+                partition_uri,
+                storage_options=storage_options,
+                index=False
             )
-        elif self._mode == 'local':
-            self._storage_options = None
+            if partition_num < config['reviews_num_partitions']:
+                print(f'Collecting partition #{partition_num + 1}...')
 
-            root_dir = str(Path(__file__).parents[2])
-            self._metadata_file = os.path.join(
-                root_dir, 'data', self._metadata_src
-            )
-            self._metadata_processed_file = os.path.join(
-                root_dir, 'data', self._metadata_trg
-            )
-        else:
-            raise ValueError('Supported modes: "local", "cloud"')
+            partitions = []
+            collected_cnt = 0
+            partition_num += 1
 
-    @staticmethod
-    def transform(df_raw: pd.DataFrame) -> pd.DataFrame:
-        transformed_data = (
-            df_raw
-            .pipe(split_aggregate_rating)
-            .pipe(split_review_summary)
-            .pipe(split_movie_genres)
-            .pipe(split_movie_details)
-            .pipe(split_boxoffice)
-        )
-        transformed_data.columns.name = None
-        return transformed_data
 
-    def run(self):
-        print('Running ETL application')
-        metadata_raw = pd.read_json(
-            self._metadata_file,
-            storage_options=self._storage_options,
-            orient='index'
-        )
-        self.transform(metadata_raw).to_json(
-            self._metadata_processed_file,
-            storage_options=self._storage_options,
-            orient='index'
-        )
+# class ReviewsETL:
+#     def __init__(self, config: Dict[str, Any]):
+#         self._mode = config['mode']
+#         self._metadata_src = config['metadata_source']
+#         self._num_partitions = config['reviews_num_partitions']
+#         self._partition_format = config['reviews_partition_format']
+
+#         if self._mode == 'cloud':
+#             load_dotenv()
+#             self._storage_options = {
+#                 'key': os.getenv('AWS_ACCESS_KEY'),
+#                 'secret': os.getenv('AWS_SECRET_ACCESS_KEY')
+#             }
+#             if (not self._storage_options['key'])\
+#                     or (not self._storage_options['secret']):
+#                 raise ValueError(
+#                     'AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY'
+#                     ' must be specified in environment variables'
+#                 )
+
+#             self._bucket = os.getenv('AWS_S3_BUCKET')
+#             if not self._bucket:
+#                 raise ValueError(
+#                     'AWS_S3_BUCKET must be specified in environment variables'
+#                 )
+
+#             self._metadata_file = os.path.join(
+#                 's3://', self._bucket, self._metadata_src
+#             )
+#         elif self._mode == 'local':
+#             self._storage_options = None
+
+#             root_dir = Path(__file__).parents[2].as_posix()
+#             self._metadata_file = os.path.join(
+#                 root_dir,
+#                 'data',
+#                 self._metadata_src
+#             )
+#         else:
+#             raise ValueError('Supported modes: "local", "cloud"')
+
+#         if self._partition_format not in ['parquet', 'csv']:
+#             raise ValueError('Unsupported partition format for reviews')
+
+#     @staticmethod
+#     def transform(raw_data: pd.DataFrame) -> pd.DataFrame:
+#         transformed_data = (
+#             raw_data
+#             .pipe(split_helpfulness_col)
+#             .pipe(correct_review_author)
+#             .pipe(cut_off_review_title_newline)
+#             .pipe(convert_to_date)
+#             .pipe(change_review_dtypes)
+#             .drop(['Unnamed: 0'], axis=1)
+#         )
+#         return transformed_data
+
+#     def run(self):
+#         metadata = pd.read_json(
+#             self._metadata_file,
+#             storage_options=self._storage_options,
+#             orient='index'
+#         )
+#         partition_to_titles = (
+#             metadata['original_title']
+#             .apply(hash)
+#             .mod(self._num_partitions)
+#             .reset_index()
+#             .groupby('original_title')
+#             .agg(set)
+#         )
+
+#         print('Running ETL application')
+#         for partition in range(self._num_partitions):
+#             partition_path = os.path.join(
+#                 's3://',
+#                 self._bucket,
+#                 f'reviews/reviews_partition_{partition + 1}.parquet'
+#             )
+#             # check if there exist a partition data
+#             try:
+#                 _ = pd.read_parquet(
+#                     partition_path,
+#                     columns=['rating'],
+#                     storage_options=self._storage_options
+#                 )
+#                 print(f'Partition #{partition + 1} already exists')
+#             except FileNotFoundError:
+#                 pass
+
+#             titles = partition_to_titles.at[partition, 'index']
+#             reviews = []
+#             for title in tqdm(titles, desc=f'Partition #{partition + 1}'):
+#                 review_path = os.path.join(
+#                     's3://',
+#                     self._bucket,
+#                     f'reviews/{title[7:-1]}.csv'
+#                 )
+#                 try:
+#                     raw_reviews = pd.read_csv(
+#                         review_path,
+#                         storage_options=self._storage_options
+#                     )
+#                 except FileNotFoundError:
+#                     continue
+
+#                 reviews.append(self.transform(raw_reviews))
+
+#             reviews_pdf = pd.concat(reviews).reset_index()
+
+#             if self._partition_format == 'parquet':
+#                 reviews_pdf.to_parquet(
+#                     partition_path,
+#                     storage_options=self._storage_options,
+#                     index=False
+#                 )
+#             elif self._partition_format == 'csv':
+#                 reviews_pdf.to_csv(
+#                     partition_path,
+#                     storage_options=self._storage_options,
+#                     index=False,
+#                     compression='gzip'
+#                 )
 
 
 def normalize(df: pd.DataFrame, col: str) -> pd.DataFrame:

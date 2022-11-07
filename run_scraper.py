@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 from imdb_scraper.movie_metadata import collect_metadata
 from imdb_scraper.movie_reviews import collect_reviews
+from imdb_scraper.preprocessing import preprocess_metadata
 from imdb_scraper.utils import read_yaml
 
 
@@ -27,6 +28,8 @@ def run(entity: str):
         collect_metadata(config['metadata'], credentials)
     elif entity == 'reviews':
         collect_reviews(config['reviews'], credentials)
+    elif entity == 'preprocessing':
+        preprocess_metadata(config['preprocessing'], credentials)
     else:
         raise ValueError('Unsupported entity')
 
