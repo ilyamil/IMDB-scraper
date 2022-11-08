@@ -2,13 +2,12 @@
 Module contains functions to Extract, Transform, Load (ETL)
 raw data collected by imdb parser.
 """
-import os
 import pandas as pd
 from typing import Dict, List, Any
-from tqdm.auto import tqdm
 
 
 def preprocess_metadata(config: Dict[str, Any], credentials: Dict[str, Any]):
+    """Process raw metadata to extract useful entites."""
     storage_options = {
         'key': credentials['aws']['access_key'],
         'secret': credentials['aws']['secret_access_key']
@@ -40,6 +39,9 @@ def preprocess_metadata(config: Dict[str, Any], credentials: Dict[str, Any]):
 
 
 def preprocess_reviews(config: Dict[str, Any], credentials: Dict[str, Any]):
+    """
+    Preprocess raw reviews and pack them in predefined number of partitions.
+    """
     storage_options = {
         'key': credentials['aws']['access_key'],
         'secret': credentials['aws']['secret_access_key']
@@ -60,12 +62,13 @@ def preprocess_reviews(config: Dict[str, Any], credentials: Dict[str, Any]):
     collected_cnt = 0
     partition_num = 1
     print(f'Collecting partition #{partition_num}...')
+    # iterate over each small partitions with raw reviews
     for n in range(1, 10000, 1):
         stop_flg = False
         try:
             partition_source_uri = (
                 f's3://{credentials["aws"]["bucket"]}'
-                f'/reviews/movie_reviews_partition_{n}'
+                f'/reviews/movie_reviews_partition_{n}.csv'
             )
             partition = pd.read_csv(
                 partition_source_uri, storage_options=storage_options
@@ -77,7 +80,8 @@ def preprocess_reviews(config: Dict[str, Any], credentials: Dict[str, Any]):
         partitions.append(partition)
         collected_cnt += partition['movie_id'].nunique()
 
-        if collected_cnt > num_movies_in_partition or stop_flg:
+        if collected_cnt > num_movies_in_partition\
+           or (stop_flg and collected_cnt > 0):
             transformed_partitions = (
                 pd.concat(partitions)
                 .pipe(split_helpfulness_col)
@@ -88,15 +92,18 @@ def preprocess_reviews(config: Dict[str, Any], credentials: Dict[str, Any]):
             )
             partition_uri = (
                 f's3://{credentials["aws"]["bucket"]}'
-                f'/reviews/movie_reviews_partition_{partition_num}'
+                f'/reviews/compressed_partition_{partition_num}.csv'
             )
             transformed_partitions.to_csv(
                 partition_uri,
                 storage_options=storage_options,
-                index=False
+                index=False,
+                compression='gzip'
             )
             if partition_num < config['reviews_num_partitions']:
                 print(f'Collecting partition #{partition_num + 1}...')
+            else:
+                print('All partitions has been collected successfully!')
 
             partitions = []
             collected_cnt = 0
