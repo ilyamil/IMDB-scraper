@@ -1,3 +1,4 @@
+from curses import meta
 import time
 import warnings
 import pandas as pd
@@ -87,8 +88,12 @@ def collect_reviews(
         s3_uri,
         storage_options=storage_options,
         orient='index'
-    )
+    ).sample(frac=1)
 
+    if 'reviews_collected_flg' not in metadata.columns:
+        metadata['reviews_collected_flg'] = False
+    if 'reviews_collected_cnt' not in metadata.columns:
+        metadata['reviews_collected_cnt'] = 0
     if config['overwrite']:
         metadata['reviews_collected_flg'] = False
         metadata['reviews_collected_cnt'] = 0
@@ -138,7 +143,8 @@ def collect_reviews(
                 partition.to_csv(
                     partition_uri,
                     storage_options=storage_options,
-                    index=False
+                    index=False,
+                    compression='gzip'
                 )
                 logger.info(
                     f'{len(reviews)} reviews have been written to '
