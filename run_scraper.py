@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 from imdb_scraper.movie_metadata import collect_metadata
 from imdb_scraper.movie_reviews import collect_reviews
-from imdb_scraper.preprocessing import preprocess_metadata, preprocess_reviews
+from imdb_scraper.preprocessing import preprocess_metadata
 from imdb_scraper.utils import read_yaml
 
 
