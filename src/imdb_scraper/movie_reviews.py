@@ -1,7 +1,6 @@
 import time
 import warnings
 import pandas as pd
-from math import ceil
 from requests import Session
 from typing import List, Dict, Any, Optional
 from tqdm.auto import tqdm
@@ -35,15 +34,13 @@ LINK_URL_TEMPLATE = (
     'https://www.imdb.com{}reviews/_ajax/?sort=helpfulnessScore'
     '&dir=desc&ratingFilter=0'
 )
-PARTITION_NAME_TEMPLATE = 's3://{}/reviews/movie_reviews_partition_{}.csv'
+PARTITION_NAME_TEMPLATE = 's3://{}/reviews/reviews_partition_{}.csv'
 SLEEP_TIME = 0.1
-BATCH_SIZE = 100
 
 
 def collect_reviews(
     config: Dict[str, Any],
     credentials: Dict[str, Any],
-    limit: int = BATCH_SIZE,
     return_results: bool = False
 ):
     """
@@ -94,9 +91,11 @@ def collect_reviews(
 
     if config['overwrite']:
         metadata['reviews_collected_flg'] = False
+        metadata['reviews_collected_cnt'] = 0
 
     reviews = []
     collected_cnt = 0
+    partition_num = 1
     for i, movie_id in enumerate(tqdm(metadata.index), 1):
         if metadata.at[movie_id, 'reviews_collected_flg']:
             continue
@@ -107,12 +106,17 @@ def collect_reviews(
                 movie_id, config['pct_reviews'], logger
         )
         reviews.extend(single_movie_reviews)
+        num_reviews = len(single_movie_reviews)
         metadata.at[movie_id, 'reviews_collected_flg'] = True
-        collected_cnt += 1
+        metadata.at[movie_id, 'reviews_collected_cnt'] = num_reviews
+
+        if num_reviews > 0:
+            collected_cnt += 1
 
         logger.info(f'Collected reviews for movie {movie_id}')
 
-        if (collected_cnt >= limit) | (i == len(metadata.index)):
+        if (collected_cnt >= config['partition_size'])\
+           | (i == len(metadata.index)):
             if return_results:
                 return reviews
             else:
@@ -120,24 +124,101 @@ def collect_reviews(
                     s3_uri, storage_options=storage_options, orient='index'
                 )
 
-                partition_num = ceil(i / limit)
                 partition_uri = PARTITION_NAME_TEMPLATE.format(
                     credentials["aws"]["bucket"], partition_num
                 )
-                partition = pd.DataFrame.from_records(reviews)
+                partition = (
+                    pd.DataFrame.from_records(reviews)
+                    .pipe(split_helpfulness_col)
+                    .pipe(correct_review_author)
+                    .pipe(cut_off_review_title_newline)
+                    .pipe(convert_to_date)
+                    .pipe(change_review_dtypes)
+                )
                 partition.to_csv(
                     partition_uri,
                     storage_options=storage_options,
                     index=False
                 )
-
                 logger.info(
                     f'{len(reviews)} reviews have been written to '
                     f'partition #{partition_num}'
                 )
-
                 reviews = []
                 collected_cnt = 0
+                partition_num += 1
+
+
+def split_helpfulness_col(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """
+    Split 'helpfulness' column of input dataframe into two
+    distinct columns: 'upvotes' and 'total_votes'.
+    After transformation 'helpfulness' column is removed.
+    """
+    if 'helpfulness' not in df_raw.columns:
+        raise ValueError('No "helpfulness" column in input data')
+
+    df_ = df_raw.copy(deep=False)
+    df_[['upvotes', 'total_votes']] = (
+        df_['helpfulness']
+        .str.replace(',', '')
+        .str.extractall('(\d+)') # noqa
+        .unstack('match')
+        .values
+        .astype('float32')
+    )
+    return df_.drop(columns=['helpfulness'])
+
+
+def correct_review_author(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """
+    Standardizes all review author identifiers in column 'author'
+    by preserving only minimum valid part in form of '/user/urXXXXXX'.
+    """
+    if 'author' not in df_raw.columns:
+        raise ValueError('No "author" column in input data')
+
+    df_ = df_raw.copy(deep=False)
+    df_['author'] = df_['author'].astype(str).str.split('?', expand=True)[0]
+    return df_
+
+
+def cut_off_review_title_newline(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """
+    Removes '\n' at the end of each review title. 'title' column required.
+    """
+    if 'title' not in df_raw.columns:
+        raise ValueError('No "title" column in input data')
+
+    df_ = df_raw.copy(deep=False)
+    df_['title'] = df_['title'].astype(str).str.rstrip('\n')
+    return df_
+
+
+def change_review_dtypes(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """
+    Changes column data types to reduce memory footprint.
+    """
+    type_mapping = {
+        'upvotes': 'int16',
+        'total_votes': 'int16',
+        'rating': 'float32'
+    }
+    return df_raw.astype(type_mapping)
+
+
+def convert_to_date(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convert 'date' column of type 'object' of input data to 'review_date'
+    column of type datetime64[ns]. After transformation the 'date' column
+    is removed.
+    """
+    if 'date' not in df_raw.columns:
+        raise ValueError('No "date" column in input data')
+
+    df_ = df_raw.copy(deep=False)
+    df_['review_date'] = pd.to_datetime(df_['date'])
+    return df_.drop(columns=['date'])
 
 
 def collect_single_movie_reviews(

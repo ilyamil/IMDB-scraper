@@ -29,8 +29,7 @@ def run(entity: str):
     elif entity == 'reviews':
         collect_reviews(config['reviews'], credentials)
     elif entity == 'preprocessing':
-        # preprocess_metadata(config['preprocessing'], credentials)
-        preprocess_reviews(config['preprocessing'], credentials)
+        preprocess_metadata(config['preprocessing'], credentials)
     else:
         raise ValueError('Unsupported entity')
 

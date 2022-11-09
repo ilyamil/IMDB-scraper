@@ -12,6 +12,7 @@ reviews:
   metadata_file: 'metadata/metadata_raw.json'
   pct_reviews: 100
   overwrite: True
+  partition_size: 1000
   log_file: 'logs/reviews.log'
   log_level: 'INFO'
   log_msg_format: '%(asctime)s %(levelname)s %(message)s'
@@ -20,4 +21,3 @@ reviews:
 preprocessing:
   source: 'metadata/metadata_raw.json'
   target: 'metadata/metadata_preprocessed.json'
-  reviews_num_partitions: 10
